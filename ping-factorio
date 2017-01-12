@@ -93,6 +93,7 @@ def loop():
                    % (len(data), addr[0], addr[1], seq, 
                        latency.total_seconds() * 1000))
 
+print("PING %s %s" % dest)
 
 signal.signal(signal.SIGINT, stop)
 signal.signal(signal.SIGTERM, stop)

@@ -7,6 +7,7 @@ import socket
 import struct
 import signal
 import sys
+import math
 
 if len(sys.argv) == 2:
     dest = (sys.argv[1], 34197)
@@ -20,22 +21,78 @@ mutex = threading.Lock()
 pkg_index = 1
 pkg_sent = {}
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+start_time = datetime.datetime.now()
 
 def sender():
+    global mutex, dest, pkg_index, pkg_sent, sock
     while True:
-        global mutex, dest, pkg_index, pkg_sent, sock
+        if pkg_index > 65535:
+            stop()
         if mutex.acquire():
             now = datetime.datetime.now()
             data = struct.pack("<BH", 0, pkg_index)
-            pkg_sent[pkg_index] = now
-            pkg_index = (pkg_index + 1) % 65536
+            pkg_sent[pkg_index] = {"sent": now}
+            pkg_index = pkg_index + 1
             mutex.release()
 
             sock.sendto(data, dest)
         time.sleep(1)
 
 def stop(sig, frame):
+    global mutex, pkg_sent, start_time
+    if mutex.acquire():
+        print()
+        print("--- %s:%s ping statistics ---" % dest)
+
+        n_recv = 0
+        l_min = 999999
+        l_max = 0
+        l_sum = 0
+        l2_sum = 0
+        for seq in pkg_sent:
+            if "received" in pkg_sent[seq]:
+                latency = pkg_sent[seq]["received"] - pkg_sent[seq]["sent"]
+                l = latency.total_seconds() * 1000
+                n_recv += 1
+                l_min = min(l_min, l)
+                l_max = max(l_max, l)
+                l_sum += l
+                l2_sum += l * l
+
+        now = datetime.datetime.now()
+        total_time = (now - start_time).total_seconds() * 1000
+        print("%d packets transmitted, %d received, %d%% packet loss, time %dms"
+                % (len(pkg_sent), n_recv, (1 - n_recv / len(pkg_sent)) * 100, total_time))
+
+        if n_recv > 0:
+            l_avg = l_sum / n_recv
+            l2_avg = l2_sum / n_recv
+            l_mdev = math.sqrt(l2_avg - l_avg * l_avg)
+            print("rtt min/avg/max/mdev = %.3f/%.3f/%.3f/%.3f ms"
+                    % (l_min, l_avg, l_max, l_mdev))
+
+        mutex.release()
+
     exit(0)
+
+def loop():
+    global mutex, dest, pkg_index, pkg_sent, sock
+    while True:
+        data, addr = sock.recvfrom(1024)
+        proto, seq = struct.unpack('<BH', data)
+        if proto != 1:
+            print('illegal package received')
+            continue
+        now = datetime.datetime.now()
+        if mutex.acquire():
+            pkg_sent[seq]["received"] = now
+            latency = now - pkg_sent[seq]["sent"]
+            mutex.release()
+
+            print("%d bytes from %s %s: seq=%d time=%.1f ms"
+                   % (len(data), addr[0], addr[1], seq, 
+                       latency.total_seconds() * 1000))
+
 
 signal.signal(signal.SIGINT, stop)
 signal.signal(signal.SIGTERM, stop)
@@ -44,16 +101,4 @@ t = threading.Thread(target=sender)
 t.setDaemon(True)
 t.start()
 
-while True:
-    data, addr = sock.recvfrom(1024)
-    proto, seq = struct.unpack('<BH', data)
-    if proto != 1:
-        print('illegal package received')
-        continue
-    now = datetime.datetime.now()
-    if mutex.acquire():
-        latency = now - pkg_sent[seq]
-        mutex.release()
-
-        print("%d bytes from %s %s: seq=%d time=%.1f ms" % (len(data), addr[0], addr[1], seq, latency.total_seconds() * 1000))
-
+loop()

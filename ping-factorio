@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+
+import threading
+import time
+import datetime
+import socket
+import struct
+import signal
+import sys
+
+if len(sys.argv) == 2:
+    dest = (sys.argv[1], 34197)
+elif len(sys.argv) == 3:
+    dest = (sys.argv[1], int(sys.argv[2]))
+else:
+    print("%s ip_or_domain [port]" % sys.argv[0])
+    exit(0)
+
+mutex = threading.Lock()
+pkg_index = 1
+pkg_sent = {}
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+def sender():
+    while True:
+        global mutex, dest, pkg_index, pkg_sent, sock
+        if mutex.acquire():
+            now = datetime.datetime.now()
+            data = struct.pack("<BH", 0, pkg_index)
+            pkg_sent[pkg_index] = now
+            pkg_index = (pkg_index + 1) % 65536
+            mutex.release()
+
+            sock.sendto(data, dest)
+        time.sleep(1)
+
+def stop(sig, frame):
+    exit(0)
+
+signal.signal(signal.SIGINT, stop)
+signal.signal(signal.SIGTERM, stop)
+
+t = threading.Thread(target=sender)
+t.setDaemon(True)
+t.start()
+
+while True:
+    data, addr = sock.recvfrom(1024)
+    proto, seq = struct.unpack('<BH', data)
+    if proto != 1:
+        print('illegal package received')
+        continue
+    now = datetime.datetime.now()
+    if mutex.acquire():
+        latency = now - pkg_sent[seq]
+        mutex.release()
+
+        print("%d bytes from %s %s: seq=%d time=%.1f ms" % (len(data), addr[0], addr[1], seq, latency.total_seconds() * 1000))
+

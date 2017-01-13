@@ -44,7 +44,7 @@ def stop(sig, frame):
     global mutex, pkg_sent, start_time
     if mutex.acquire():
         print()
-        print("--- %s:%s ping statistics ---" % dest)
+        print("--- %s:%s ping statistics ---" % (addr, port))
 
         n_recv = 0
         l_min = 999999

@@ -10,9 +10,11 @@ import sys
 import math
 
 if len(sys.argv) == 2:
-    dest = (sys.argv[1], 34197)
+    addr = sys.argv[1]
+    port = 34197
 elif len(sys.argv) == 3:
-    dest = (sys.argv[1], int(sys.argv[2]))
+    addr = sys.argv[1]
+    port = int(sys.argv[2])
 else:
     print("%s ip_or_domain [port]" % sys.argv[0])
     exit(0)
@@ -93,7 +95,9 @@ def loop():
                    % (len(data), addr[0], addr[1], seq, 
                        latency.total_seconds() * 1000))
 
-print("PING %s %s" % dest)
+dest = (socket.gethostbyname(addr), port)
+
+print("PING %s (%s) %s" % (addr, dest[0], port))
 
 signal.signal(signal.SIGINT, stop)
 signal.signal(signal.SIGTERM, stop)
